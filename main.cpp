@@ -109,22 +109,96 @@ static double relu(double value) {
     return std::max(0.0, value);
 }
 
-class Node {
-    public:
+class Node;
 
-    int id;
-    std::map<Node, int> prev;
-    std::map<Node, int> next;
+class Connection {
+    public:
+    // Connection is directed from source node -> target node
+    // Target node
+    Node *target;
+    // Source node
+    Node *origin;
+    // Weight of the connection
+    double weight;
+
+    Connection(Node *p_target, Node *p_origin, double p_weight) {
+        target = p_target;
+        origin = p_origin;
+        weight = p_weight;
+    }
 };
 
-class Graph {
-    std::vector<Node> nodes;
+class Node {
+    std::string id;
+    // Maps previous nodes and their respective weights
+    std::vector<Connection*> prev;
+    // Maps next nodes and their respective weights
+    std::vector<Connection*> next;
+
+    // Constructor
+    public:
+    Node(std::string p_id) {
+        id = p_id;
+    }
+
+    void print() {
+        std::cout << "Node" << id << ":" << std::endl;
+        std::cout << "Incoming connections:" << std::endl;
+        for(Connection* c: prev) {
+            std::cout << c->origin->id << " -> " << c->target->id << std::endl;
+        }
+
+        std::cout << "Outgoing connections:" << std::endl;
+        for(Connection* c: next) {
+            std::cout << c->origin->id << " -> " << c->target->id << std::endl;
+        }
+    }
+
+    // Connect this node to another, using a Connection object
+    void connect(Node* node) {
+        // TODO: Connection has a default weight of 1 (as of now, look into this later and allow for weight initializers)
+        Connection* connection = new Connection(node, this, 1.0);
+        next.push_back(connection);
+        node->prev.push_back(connection);
+    }
 };
 
 class Layer {
     public:
+    std::string id;
+    std::vector<Node*> nodes;
 
+    virtual void connect(Layer* layer) = 0;
+};
 
+class DenseLayer: public Layer {
+    public:
+    DenseLayer(std::string p_id, int number_of_nodes) {
+        id = p_id;
+        for(int i=0; i<number_of_nodes; i++) {
+            Node* new_node = new Node(id + "_" + std::to_string(i));
+            nodes.push_back(new_node);
+        }
+    }
+
+    void print() {
+        std::cout << "Layer " << id << ":" << std::endl;
+        for(Node* node: nodes) {
+            (*node).print();
+            std::cout << std::endl; 
+        }
+    }
+
+    // Connect this layer to another, connecting individual nodes
+    // This is a DenseLayer, so connect all nodes to all following nodes
+    void connect(Layer* layer) {
+        auto target_nodes = layer->nodes;
+        for(Node* node: nodes) {
+            for(Node* target_node: target_nodes) {
+                node->connect(target_node);
+            }
+        }
+    }
 };
 
 
@@ -132,7 +206,19 @@ class Layer {
 class NeuralNetwork {
     public:
 
-    std::vector<Layer> layers;
+    std::vector<Layer*> layers;
+
+    void connect() {
+        if(layers.size() <= 1) {
+            std::cout << "WARNING, LESS THAN TWO LAYERS, NOT CONNECTING THE NETWORK!!" << std::endl;
+            return;
+        }
+        for(int i=0; i<layers.size()-1; i++) {
+            Layer* source_layer = layers[i];
+            Layer* target_layer = layers[i+1];
+            source_layer->connect(target_layer);
+        }
+    }
 
     void train(std::vector<std::vector<int> > X, std::vector<int> y) {
 
@@ -143,17 +229,17 @@ class NeuralNetwork {
 
 int main()
 {
-    // int a = 5;
-    // std::string b = test(a);
-    // auto data = read_csv("data/mnist_train.csv");
-    // calls Sum::operator() for each number
-    // plot_number(data, 1);
-    std::vector<int> vect { 10, 20, 30 };
+    NeuralNetwork nn = NeuralNetwork();
+    DenseLayer l1 = DenseLayer("1", 2);
+    DenseLayer l2 = DenseLayer("2", 4);
+    DenseLayer l3 = DenseLayer("3", 2);
 
-    std::cout << softmax(vect);
-    // std::for_each(data.begin(), data.end(), unpack_csv);
- 
-    // std::cout << data << std::endl;
+    nn.layers.push_back(&l1);
+    nn.layers.push_back(&l2);
+    nn.layers.push_back(&l3);
+
+    nn.connect();
+    l2.print();
 }
 
 
