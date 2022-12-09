@@ -101,7 +101,7 @@ void plot_number(std::vector<std::pair<std::string, std::vector<int> > > dataset
     std::cout << std::endl;
 }
 
-static int softmax(std::vector<int> predictions) {
+static int softmax(std::vector<double> predictions) {
     return std::distance(predictions.begin(), std::max_element(predictions.begin(), predictions.end()));
 }
 
@@ -134,13 +134,23 @@ class Node {
     std::vector<Connection*> prev;
     // Maps next nodes and their respective weights
     std::vector<Connection*> next;
+    
+    // Activation function used by the node
+    std::function<double(double)> activation_function;
+    // Bias (constant)
+    double bias = 1;
+
+    double output;
 
     // Constructor
     public:
-    Node(std::string p_id) {
+    Node(std::string p_id, std::function<double(double)> p_activation_function, double p_bias = 1) {
         id = p_id;
+        activation_function = p_activation_function;
+        bias = p_bias;
     }
 
+    // Prints node connections
     void print() {
         std::cout << "Node" << id << ":" << std::endl;
         std::cout << "Incoming connections:" << std::endl;
@@ -152,6 +162,20 @@ class Node {
         for(Connection* c: next) {
             std::cout << c->origin->id << " -> " << c->target->id << std::endl;
         }
+    }
+
+    // Transforms inputs from prev nodes with weights, bias and activation function, forward pass
+    double feedforward() {
+        double output = 0;
+        for(Connection* prev_node: prev) {
+            double weight = prev_node->weight;
+            double input = prev_node->origin->output;
+            output += weight * input;
+        }
+        output += this->bias;
+        output = this->activation_function(output);
+        this->output = output;
+        return output;
     }
 
     // Connect this node to another, using a Connection object
@@ -167,16 +191,19 @@ class Layer {
     public:
     std::string id;
     std::vector<Node*> nodes;
+    std::function<double(double)> activation_function;
 
+    virtual void feedforward() = 0;
     virtual void connect(Layer* layer) = 0;
 };
 
 class DenseLayer: public Layer {
     public:
-    DenseLayer(std::string p_id, int number_of_nodes) {
+    DenseLayer(std::string p_id, int number_of_nodes, std::function<double(double)> p_activation_function) {
         id = p_id;
+        activation_function = p_activation_function;
         for(int i=0; i<number_of_nodes; i++) {
-            Node* new_node = new Node(id + "_" + std::to_string(i));
+            Node* new_node = new Node(id + "_" + std::to_string(i), activation_function);
             nodes.push_back(new_node);
         }
     }
@@ -184,8 +211,14 @@ class DenseLayer: public Layer {
     void print() {
         std::cout << "Layer " << id << ":" << std::endl;
         for(Node* node: nodes) {
-            (*node).print();
+            node->print();
             std::cout << std::endl; 
+        }
+    }
+
+    void feedforward() {
+        for(Node* node: nodes) {
+            node->feedforward();
         }
     }
 
@@ -220,6 +253,12 @@ class NeuralNetwork {
         }
     }
 
+    void forward_pass() {
+        for(Layer* layer: layers) {
+            layer->feedforward();
+        }
+    }
+
     void train(std::vector<std::vector<int> > X, std::vector<int> y) {
 
     }
@@ -230,9 +269,10 @@ class NeuralNetwork {
 int main()
 {
     NeuralNetwork nn = NeuralNetwork();
-    DenseLayer l1 = DenseLayer("1", 2);
-    DenseLayer l2 = DenseLayer("2", 4);
-    DenseLayer l3 = DenseLayer("3", 2);
+    DenseLayer l1 = DenseLayer("1", 2, relu);
+    DenseLayer l2 = DenseLayer("2", 4, relu);
+    // Change this later to allow for softmax as an output function
+    DenseLayer l3 = DenseLayer("3", 10, relu);
 
     nn.layers.push_back(&l1);
     nn.layers.push_back(&l2);
