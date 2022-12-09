@@ -135,6 +135,7 @@ class Node {
     // Maps next nodes and their respective weights
     std::vector<Connection*> next;
     
+    public:
     // Activation function used by the node
     std::function<double(double)> activation_function;
     // Bias (constant)
@@ -143,7 +144,6 @@ class Node {
     double output;
 
     // Constructor
-    public:
     Node(std::string p_id, std::function<double(double)> p_activation_function, double p_bias = 1) {
         id = p_id;
         activation_function = p_activation_function;
@@ -194,7 +194,21 @@ class Layer {
     std::function<double(double)> activation_function;
 
     virtual void feedforward() = 0;
+    virtual void backprop(double error, double learning_rate) = 0;
     virtual void connect(Layer* layer) = 0;
+
+    // Initializes the layer with given inputs. This is to be used for the input layer
+    void initialize(std::vector<int> inputs) {
+        if(inputs.size() != nodes.size()) {
+            std::cout << "WARNING, INPUT SIZE NOT EQUAL TO NODE SIZE, NOT INITIALIZING LAYER " << id << " !!" << std::endl;
+            return;
+        }
+        for(int i = 0; i < inputs.size(); i++) {
+            Node* node = nodes.at(i);
+            double input = inputs.at(i);
+            node->output = input;
+        }
+    }
 };
 
 class DenseLayer: public Layer {
@@ -208,18 +222,16 @@ class DenseLayer: public Layer {
         }
     }
 
-    void print() {
-        std::cout << "Layer " << id << ":" << std::endl;
-        for(Node* node: nodes) {
-            node->print();
-            std::cout << std::endl; 
-        }
-    }
-
+    // Forward pass, calls the feedforward method on all nodes
     void feedforward() {
         for(Node* node: nodes) {
             node->feedforward();
         }
+    }
+
+    // Backward pass, propagate error and update weights
+    void backprop(double error, double learning_rate) {
+        // TODO
     }
 
     // Connect this layer to another, connecting individual nodes
@@ -232,6 +244,15 @@ class DenseLayer: public Layer {
             }
         }
     }
+
+    // Prints descriptive info
+    void print() {
+        std::cout << "Layer " << id << ":" << std::endl;
+        for(Node* node: nodes) {
+            node->print();
+            std::cout << std::endl; 
+        }
+    }
 };
 
 
@@ -240,7 +261,13 @@ class NeuralNetwork {
     public:
 
     std::vector<Layer*> layers;
+    double learning_rate;
 
+    NeuralNetwork(double p_learning_rate = 0.005) {
+        learning_rate = p_learning_rate;
+    }
+
+    // Connects the entire network, call after finalizing the layers
     void connect() {
         if(layers.size() <= 1) {
             std::cout << "WARNING, LESS THAN TWO LAYERS, NOT CONNECTING THE NETWORK!!" << std::endl;
@@ -253,14 +280,42 @@ class NeuralNetwork {
         }
     }
 
-    void forward_pass() {
+    void forward_pass(std::vector<int> X, int y_true) {
+        // Initialize the input layer
+        layers.front()->initialize(X);
+        
+        // Feed forward
         for(Layer* layer: layers) {
             layer->feedforward();
         }
+
+        // Handle outputs here instead of inside the layer
+        // (Manually implemented output layer)
+        // Move this to an actual output layer later
+        Layer* output_layer = layers.back();
+        std::vector<Node*> nodes = output_layer->nodes;
+        std::vector<double> outputs;
+        outputs.reserve(nodes.size());
+        std::transform(nodes.begin(), nodes.end(), std::back_inserter(outputs), [](Node&& node) { return node.output; });
+
+        double loss = loss_function(outputs, y_true);
+        
+        backward_pass(loss, learning_rate);
+    }
+
+    void backward_pass(double loss, double learning_rate) {
+        for(Layer* layer: layers) {
+            layer->backprop(loss, learning_rate);
+        }
+    }
+
+    double loss_function(std::vector<double> outputs, int y_true) {
+        
     }
 
     void train(std::vector<std::vector<int> > X, std::vector<int> y) {
-
+        // Run forward pass once for now
+        forward_pass(X.at(0), y.at(0));
     }
 };
 
