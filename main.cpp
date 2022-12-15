@@ -8,11 +8,12 @@
 #include <array>
 #include <algorithm>
 #include <map>
+#include <cmath>
+#include <numeric>
+#include <iterator>
+#include <Eigen/Core>
 
-
-static std::string test(int &number) {
-    return std::to_string(number);
-}
+using Eigen::MatrixXd;
 
 std::vector<std::pair<std::string, std::vector<int> > > read_csv(std::string filename){
     // Reads a CSV file into a vector of <string, vector<int>> pairs where
@@ -108,6 +109,58 @@ static int softmax(std::vector<double> predictions) {
 static double relu(double value) {
     return std::max(0.0, value);
 }
+static double relu_prime(double value) {
+    return value > 0 ? 1 : 0;
+}
+
+static std::vector<std::vector<double> > transpose(std::vector<std::vector<double> > matrix) {
+    // Transpose matrix
+    // i - row index; j - column index
+    std::vector<std::vector<double> > new_matrix;
+    for(int x=0; x < matrix[0].size(); x++) {
+        new_matrix.push_back(std::vector<double>(matrix.size()));
+    }
+
+    for(int i = 0; i<matrix.size(); i++) {        
+        for (int j=0; j<matrix[i].size(); j++) {
+            new_matrix[j][i] = matrix[i][j];
+        }
+    }
+    return new_matrix;
+}
+
+static double dot(std::vector<double> vector, double scalar) {
+    double total = 0;
+    for(double value: vector) {
+        total += value * scalar;
+    }
+    return total;
+}
+static double dot(std::vector<std::vector<double> > matrix, double scalar) {
+    double total = 0;
+    for(auto row: matrix) {
+        for(double value: row) {
+            total += value * scalar;
+        }
+    }
+    return total;
+}
+static std::vector<double> dot(std::vector<std::vector<double> > matrix, std::vector<double> vector) {
+    std::vector<double> output;
+    for(int i=0; i<matrix.size(); i++) {
+        double row_total = 0;
+        auto row = matrix[i];
+        auto scalar = vector[i];
+        if(row.size() != vector.size()) {
+            std::cout << "WARNING, VECTOR AND MATRIX ARE NOT EQUAL SIZE!";
+        }
+        for(double value: row) {
+            row_total += value * scalar;
+        }
+        output.push_back(row_total);
+    }
+    return output;
+}
 
 class Node;
 
@@ -138,15 +191,19 @@ class Node {
     public:
     // Activation function used by the node
     std::function<double(double)> activation_function;
-    // Bias (constant)
-    double bias = 1;
 
+    // Bias
+    double bias;
+    // Output value before calling the activation function
+    double intermediate;
+    // Output value after calling the activation function
     double output;
 
     // Constructor
     Node(std::string p_id, std::function<double(double)> p_activation_function, double p_bias = 1) {
         id = p_id;
         activation_function = p_activation_function;
+        // TODO: Implement random bias initialization (maybe at a layer basis to allow for different initialization functions?)
         bias = p_bias;
     }
 
@@ -164,17 +221,45 @@ class Node {
         }
     }
 
+    std::vector<double> get_inputs() {
+        std::vector<double> inputs;
+        for(Connection* conn: prev) {
+            inputs.push_back(conn->origin->output);
+        }
+        return inputs;
+    }
+
+    std::vector<double> get_weights() {
+        std::vector<double> weights;
+        for(Connection* conn: prev) {
+            weights.push_back(conn->weight);
+        }
+        return weights;
+    }
+
+    void update_weights(double error) {
+        for(Connection* conn: prev) {
+            conn-> weight = conn-> weight - error;
+        }
+    }
+
     // Transforms inputs from prev nodes with weights, bias and activation function, forward pass
     double feedforward() {
-        double output = 0;
-        for(Connection* prev_node: prev) {
-            double weight = prev_node->weight;
-            double input = prev_node->origin->output;
-            output += weight * input;
-        }
-        output += this->bias;
-        output = this->activation_function(output);
+        std::vector<double> inputs = get_inputs();
+        std::vector<double> weights = get_weights();
+
+        std::vector<double> weighted_inputs;
+        weighted_inputs.reserve(inputs.size());
+        std::transform(inputs.begin(), inputs.end(),
+                        weights.begin(), std::back_inserter(weighted_inputs), 
+                        std::multiplies<double>());
+
+        double output = std::accumulate(weighted_inputs.begin(), weighted_inputs.end(), 0);
+        output += bias;
+        intermediate = output;
+        output = activation_function(output);
         this->output = output;
+
         return output;
     }
 
@@ -187,35 +272,46 @@ class Node {
     }
 };
 
+// Abstract layer class
 class Layer {
     public:
     std::string id;
     std::vector<Node*> nodes;
     std::function<double(double)> activation_function;
+    std::function<double(double)> activation_function_prime;
 
     virtual void feedforward() = 0;
-    virtual void backprop(double error, double learning_rate) = 0;
+    virtual std::vector<double> backprop(std::vector<double> error, double learning_rate) = 0;
     virtual void connect(Layer* layer) = 0;
 
     // Initializes the layer with given inputs. This is to be used for the input layer
-    void initialize(std::vector<int> inputs) {
+    void initialize(std::vector<double> inputs) {
         if(inputs.size() != nodes.size()) {
             std::cout << "WARNING, INPUT SIZE NOT EQUAL TO NODE SIZE, NOT INITIALIZING LAYER " << id << " !!" << std::endl;
             return;
         }
         for(int i = 0; i < inputs.size(); i++) {
-            Node* node = nodes.at(i);
-            double input = inputs.at(i);
+            Node* node = nodes[i];
+            double input = inputs[i];
             node->output = input;
         }
     }
 };
 
+// Fully connected layer
 class DenseLayer: public Layer {
+    std::vector<double> reverse_activation_function(std::vector<double> error, std::vector<double> intermediates) {
+        std::vector<double> output;
+        for(int i=0; i<intermediates.size(); i++) {
+            output.push_back(activation_function_prime(intermediates[i]) * error[i]);
+        }
+        return output;
+    }
     public:
-    DenseLayer(std::string p_id, int number_of_nodes, std::function<double(double)> p_activation_function) {
+    DenseLayer(std::string p_id, int number_of_nodes, std::function<double(double)> p_activation_function, std::function<double(double)> p_activation_function_prime) {
         id = p_id;
         activation_function = p_activation_function;
+        activation_function_prime = p_activation_function_prime;
         for(int i=0; i<number_of_nodes; i++) {
             Node* new_node = new Node(id + "_" + std::to_string(i), activation_function);
             nodes.push_back(new_node);
@@ -230,8 +326,34 @@ class DenseLayer: public Layer {
     }
 
     // Backward pass, propagate error and update weights
-    void backprop(double error, double learning_rate) {
-        // TODO
+    std::vector<double> backprop(std::vector<double> error, double learning_rate) {
+        // Weight and input matrices
+        std::vector<std::vector<double> > weights;
+        std::vector<std::vector<double> > inputs;
+        std::vector<double> intermediates;
+        for(int i=0; i<nodes.size(); i++) {
+            auto node = nodes[i];
+            weights.push_back(node->get_weights());
+            inputs.push_back(node->get_inputs());
+            intermediates.push_back(node->intermediate);
+
+            // Update bias of each node
+            node->bias -= learning_rate * error[i];
+        }
+
+        std::vector<double> output_error = reverse_activation_function(error, intermediates);
+
+        auto weights_t = transpose(weights);
+        auto inputs_t = transpose(inputs);
+
+        // Verify this in python
+        auto input_error = dot(weights_t, output_error);
+        auto weight_error = dot(inputs_t, output_error);
+
+        for(int i=0; i<weight_error.size(); i++) {
+            nodes[i]->update_weights(weight_error[i] * learning_rate);
+        }
+        return input_error;
     }
 
     // Connect this layer to another, connecting individual nodes
@@ -280,7 +402,8 @@ class NeuralNetwork {
         }
     }
 
-    void forward_pass(std::vector<int> X, int y_true) {
+    // Forward pass, predict outputs for input vector X
+    std::vector<double> forward_pass(std::vector<double> X) {
         // Initialize the input layer
         layers.front()->initialize(X);
         
@@ -289,33 +412,55 @@ class NeuralNetwork {
             layer->feedforward();
         }
 
-        // Handle outputs here instead of inside the layer
-        // (Manually implemented output layer)
-        // Move this to an actual output layer later
+        // Return outputs of each node 
         Layer* output_layer = layers.back();
         std::vector<Node*> nodes = output_layer->nodes;
         std::vector<double> outputs;
         outputs.reserve(nodes.size());
-        std::transform(nodes.begin(), nodes.end(), std::back_inserter(outputs), [](Node&& node) { return node.output; });
+        std::transform(nodes.begin(), nodes.end(), std::back_inserter(outputs), [](Node* node) { return node->output; });
 
-        double loss = loss_function(outputs, y_true);
-        
-        backward_pass(loss, learning_rate);
+        // Check whether outputs have to be rescaled
+        // Do that here if needed
+
+        return outputs;        
     }
 
-    void backward_pass(double loss, double learning_rate) {
-        for(Layer* layer: layers) {
-            layer->backprop(loss, learning_rate);
+    // Backward pass, update weights and biases based on loss and learning rate
+    void backward_pass(std::vector<double> error, double learning_rate) {
+        // Pass through layers in reverse order
+        for(int i = layers.size() - 1; i>=0; i--) {
+            layers[i]->backprop(error, learning_rate);
         }
     }
 
-    double loss_function(std::vector<double> outputs, int y_true) {
-        
+
+    // Use mse as a loss for now, add more losses later / if necessary
+    // Calculates loss based on predicted outputs and true label
+    double loss_function(std::vector<double> outputs, std::vector<double> y_true) {
+        double squared_delta_sum = 0;
+        for(int i=0; i<outputs.size(); i++) {
+            double delta = outputs[i] - y_true[i];
+            delta *= delta;
+            squared_delta_sum += delta;
+        }
+        double loss = squared_delta_sum / outputs.size();
+        return loss;
+    }
+    std::vector<double> loss_function_prime(std::vector<double> outputs, std::vector<double> y_true) {
+        std::vector<double> losses;
+        for(int i=0; i<outputs.size(); i++) {
+            losses.push_back(2 * (outputs[i] - y_true[i]) / outputs.size());
+        }
+        return losses;
     }
 
-    void train(std::vector<std::vector<int> > X, std::vector<int> y) {
-        // Run forward pass once for now
-        forward_pass(X.at(0), y.at(0));
+    // Trains the network based on X and y 
+    // TODO: Implement train / test split
+    void train(std::vector<std::vector<double> > X, std::vector<std::vector<double>> y) {
+        // Run passes once for now
+        auto outputs = forward_pass(X[0]);
+        auto errors = loss_function_prime(outputs, y[0]);
+        backward_pass(errors, learning_rate);
     }
 };
 
@@ -324,10 +469,10 @@ class NeuralNetwork {
 int main()
 {
     NeuralNetwork nn = NeuralNetwork();
-    DenseLayer l1 = DenseLayer("1", 2, relu);
-    DenseLayer l2 = DenseLayer("2", 4, relu);
+    DenseLayer l1 = DenseLayer("1", 2, relu, relu_prime);
+    DenseLayer l2 = DenseLayer("2", 4, relu, relu_prime);
     // Change this later to allow for softmax as an output function
-    DenseLayer l3 = DenseLayer("3", 10, relu);
+    DenseLayer l3 = DenseLayer("3", 10, relu, relu_prime);
 
     nn.layers.push_back(&l1);
     nn.layers.push_back(&l2);
@@ -335,6 +480,8 @@ int main()
 
     nn.connect();
     l2.print();
+    
+    
 }
 
 
