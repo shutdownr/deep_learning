@@ -1,3 +1,4 @@
+#include <cmath>
 #include <functional>
 #include <vector>
 
@@ -17,6 +18,32 @@ static std::vector<std::vector<double> > transpose(std::vector<std::vector<doubl
         }
     }
     return new_matrix;
+}
+
+// Computes the size of a matrix (number of elements) 
+static int size(std::vector<std::vector<double> > matrix) {
+    int size = 0;
+    for(auto vector: matrix) {
+        size += vector.size();
+    }
+    return size;
+}
+
+// Computes the sum of a vector
+static double sum(std::vector<double> vector) {
+    double sum = 0;
+    for(double value: vector) {
+        sum += value;
+    }
+    return sum;
+}
+// Computes the sum of a matrix
+static double sum(std::vector<std::vector<double> > matrix) {
+    double total_sum = 0;
+    for(auto vector: matrix) {
+        total_sum += sum(vector);
+    }
+    return total_sum;
 }
 
 // Adds two vectors
@@ -70,8 +97,8 @@ static std::vector<double> multiply(std::vector<double> a, std::vector<double> b
 // Multiplies a matrix by a scalar
 static std::vector<std::vector<double> > multiply(std::vector<std::vector<double> > matrix, double scalar) {
     std::vector<std::vector<double> > output;
-    for(int i=0; i<matrix.size(); i++) {
-        output.push_back(multiply(matrix[i], scalar));
+    for(auto vector: matrix) {
+        output.push_back(multiply(vector, scalar));
     }
     return output;
 }
@@ -139,6 +166,24 @@ static std::vector<std::vector<double> > dot(std::vector<std::vector<double> > a
             }
             output[i].push_back(dot(row, column));
         }
+    }
+    return output;
+}
+
+// Power function of a vector
+static std::vector<double> power(std::vector<double> vector, double exponent) {
+    std::vector<double> output;
+    for(double value: vector) {
+        output.push_back(pow(value, exponent));
+    }
+    return output;
+}
+
+// Power function of a matrix
+static std::vector<std::vector<double> > power(std::vector<std::vector<double> > matrix, double exponent) {
+    std::vector<std::vector<double> > output;
+    for(auto vector: matrix) {
+        output.push_back(power(vector, exponent));
     }
     return output;
 }

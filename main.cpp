@@ -159,19 +159,10 @@ static double tanh_prime(double value) {
 // Loss functions
 // Mean squared error
 double mse(std::vector<std::vector<double> > outputs, std::vector<std::vector<double> > y_true) {
-    // TODO: Rework this to use a functional api instead of nested for loops
-    double squared_delta_sum = 0;
-    int total_size = 0;
-    for(int i=0; i<outputs.size(); i++) {
-        total_size += outputs[i].size();
-        for(int j=0; j< outputs[i].size(); j++) {
-            double delta = outputs[i][j] - y_true[i][j];
-            delta *= delta;
-            squared_delta_sum += delta;
-        }
-    }
-    double loss = squared_delta_sum / total_size;
-    return loss;
+    auto deltas = subtract(outputs, y_true);
+    auto squared_deltas = power(deltas, 2);
+    double squared_delta_sum = sum(squared_deltas);
+    return squared_delta_sum / size(outputs);
 }
 std::vector<std::vector<double> > mse_prime(std::vector<std::vector<double> > outputs, std::vector<std::vector<double> > y_true) {
     auto delta = subtract(outputs, y_true);
@@ -179,7 +170,6 @@ std::vector<std::vector<double> > mse_prime(std::vector<std::vector<double> > ou
     delta = multiply(delta, 2/total_size);
     return delta;
 }
-
 
 
 // NN classes
