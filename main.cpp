@@ -121,20 +121,6 @@ void plot_number(std::vector<std::pair<std::string, std::vector<int> > > dataset
     std::cout << std::endl;
 }
 
-// Activation functions
-// Rectified linear unit, max(x,0)
-static double relu(double value) {
-    return std::max(0.0, value);
-}
-static double relu_prime(double value) {
-    return value > 0 ? 1 : 0;
-}
-// Hyperbolic tangent
-// The non-prime function can be called with tanh(), so it's not implemented here
-static double tanh_prime(double value) {
-    return 1 - pow(tanh(value), 2);
-}
-
 // Apply function to each element of a vector
 static std::vector<double> apply(std::vector<double> vector, std::function<double(double)> function) {
     std::vector<double> output;
@@ -297,6 +283,48 @@ static std::vector<std::vector<double> > dot(std::vector<std::vector<double> > a
     return output;
 }
 
+
+// Activation functions
+// Rectified linear unit, max(x,0)
+static double relu(double value) {
+    return std::max(0.0, value);
+}
+static double relu_prime(double value) {
+    return value > 0 ? 1 : 0;
+}
+// Hyperbolic tangent
+// The non-prime function can be called with tanh(), so it's not implemented here
+static double tanh_prime(double value) {
+    return 1 - pow(tanh(value), 2);
+}
+
+
+// Loss functions
+// Mean squared error
+double mse(std::vector<std::vector<double> > outputs, std::vector<std::vector<double> > y_true) {
+    // TODO: Rework this to use a functional api instead of nested for loops
+    double squared_delta_sum = 0;
+    int total_size = 0;
+    for(int i=0; i<outputs.size(); i++) {
+        total_size += outputs[i].size();
+        for(int j=0; j< outputs[i].size(); j++) {
+            double delta = outputs[i][j] - y_true[i][j];
+            delta *= delta;
+            squared_delta_sum += delta;
+        }
+    }
+    double loss = squared_delta_sum / total_size;
+    return loss;
+}
+std::vector<std::vector<double> > mse_prime(std::vector<std::vector<double> > outputs, std::vector<std::vector<double> > y_true) {
+    auto delta = subtract(outputs, y_true);
+    double total_size = y_true.size() * y_true[0].size();
+    delta = multiply(delta, 2/total_size);
+    return delta;
+}
+
+
+
 // NN classes
 
 // Abstract layer class
@@ -408,9 +436,17 @@ class NeuralNetwork {
     std::vector<Layer*> layers;    
     // Learning rate, this is passed to the layers in connect(), the network itself doesn't use the learning rate
     double learning_rate;
+    // Calculates loss based on predicted outputs and true label, used for output
+    std::function<double(std::vector<std::vector<double> >, std::vector<std::vector<double> >)> loss_function;
+    // Loss function prime, used for backprop
+    std::function<std::vector<std::vector<double> >(std::vector<std::vector<double> >, std::vector<std::vector<double> >)> loss_function_prime;
 
-    NeuralNetwork(double p_learning_rate = 0.005) {
+    NeuralNetwork(double p_learning_rate = 0.005, 
+                std::function<double(std::vector<std::vector<double> >, std::vector<std::vector<double> >)> p_loss_function = mse, 
+                std::function<std::vector<std::vector<double> >(std::vector<std::vector<double> >, std::vector<std::vector<double> >)> p_loss_function_prime = mse_prime) {
         learning_rate = p_learning_rate;
+        loss_function = p_loss_function;
+        loss_function_prime = p_loss_function_prime;
     }
 
     // Connects the entire network, call after finalizing the layers
@@ -448,32 +484,6 @@ class NeuralNetwork {
             predictions.push_back(forward_pass(input));
         }
         return predictions;
-    }
-
-    // TODO: Move loss function outside
-    // Use mse as a loss for now, add more losses later / if necessary
-    // Calculates loss based on predicted outputs and true label
-    double loss_function(std::vector<std::vector<double> > outputs, std::vector<std::vector<double> > y_true) {
-        // TODO: Rework this to use a functional api instead of nested for loops
-        double squared_delta_sum = 0;
-        int total_size = 0;
-        for(int i=0; i<outputs.size(); i++) {
-            total_size += outputs[i].size();
-            for(int j=0; j< outputs[i].size(); j++) {
-                double delta = outputs[i][j] - y_true[i][j];
-                delta *= delta;
-                squared_delta_sum += delta;
-            }
-        }
-        double loss = squared_delta_sum / total_size;
-        return loss;
-    }
-
-    std::vector<std::vector<double> > loss_function_prime(std::vector<std::vector<double> > outputs, std::vector<std::vector<double> > y_true) {
-        auto delta = subtract(outputs, y_true);
-        double total_size = y_true.size() * y_true[0].size();
-        delta = multiply(delta, 2/total_size);
-        return delta;
     }
 
     // Trains the network based on X and y 
@@ -537,7 +547,7 @@ int main()
     std::vector<std::vector<std::vector<double> > > X = {{{0,0}}, {{0,1}}, {{1,1}}, {{1,0}}};
     std::vector<std::vector<std::vector<double> > > y = {{{0}}, {{1}}, {{0}}, {{1}}};
 
-    NeuralNetwork nn = NeuralNetwork(0.1);
+    NeuralNetwork nn = NeuralNetwork(0.1, mse, mse_prime);
 
     DenseLayer l1 = DenseLayer("1", 2, 5, tanh, tanh_prime);
     DenseLayer l2 = DenseLayer("2", 5, 1, tanh, tanh_prime);
