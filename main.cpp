@@ -1,9 +1,9 @@
 #include <string>
 #include <fstream>
 #include <vector>
-#include <utility> // std::pair
-#include <stdexcept> // std::runtime_error
-#include <sstream> // std::stringstream
+#include <utility>
+#include <stdexcept>
+#include <sstream>
 #include <iostream>
 #include <array>
 #include <algorithm>
@@ -105,7 +105,7 @@ void print_row(std::vector<std::pair<std::string, std::vector<int> > > dataset, 
     std::cout << std::endl;
 }
 
-// Prints a full number
+// Prints a full number (graphical plot)
 void plot_number(std::vector<std::pair<std::string, std::vector<int> > > dataset, int index) {
     int dataset_width = 28;
     std::cout << "Label: " << dataset[0].second[index] << std::endl;
@@ -302,8 +302,9 @@ static std::vector<std::vector<double> > dot(std::vector<std::vector<double> > a
 // Abstract layer class
 class Layer {
     public:
+    // Layer id
     std::string id;
-    // std::vector<Node*> nodes;
+    // Activation function and its prime, used in forward pass / backward pass
     std::function<double(double)> activation_function;
     std::function<double(double)> activation_function_prime;
 
@@ -350,7 +351,7 @@ class DenseLayer: public Layer {
         biases.push_back(bias_vector);
     }
 
-    // Forward pass, calls the forward_pass method on all nodes, returns outputs
+    // Forward pass, dot product of inputs and weights, with bias added and activation function applied, returns outputs
     std::vector<std::vector<double> > forward_pass(std::vector<std::vector<double> > inputs) {
         this->inputs = inputs;
 
@@ -363,13 +364,13 @@ class DenseLayer: public Layer {
         return outputs;
     }
 
-    // Backward pass, propagate error and update weights
+    // Backward pass, reverse activation function (with its prime), update biases and weights and return the updated error
     std::vector<std::vector<double> > backward_pass(std::vector<std::vector<double> > error) {
         // Reverse the activation function with its prime
         auto reverse_activation = apply(intermediates, activation_function_prime);
         auto reverse_activation_errors = multiply(reverse_activation, error);
+        
         // Update biases
-
         biases = subtract(biases, multiply(reverse_activation_errors, learning_rate));
 
         // Calculate weight updates
@@ -399,10 +400,13 @@ class DenseLayer: public Layer {
 };
 
 
-
+// Neural network class, contains a vector of layers
 class NeuralNetwork {
     public:
+
+    // Layers within the network, order represents the data flow ([0] is the input layer. [-1] is the output layer)
     std::vector<Layer*> layers;    
+    // Learning rate, this is passed to the layers in connect(), the network itself doesn't use the learning rate
     double learning_rate;
 
     NeuralNetwork(double p_learning_rate = 0.005) {
@@ -420,16 +424,12 @@ class NeuralNetwork {
         }
     }
 
-    // Forward pass, predict outputs for input vector X
+    // Forward pass, predict outputs for input matrix, inputs
     std::vector<std::vector<double> > forward_pass(std::vector<std::vector<double> > inputs) {
         // Feed forward
         for(Layer* layer: layers) {
             inputs = layer->forward_pass(inputs);
         }
-
-        // TODO: Check whether outputs have to be rescaled
-        // Do that here if needed
-
         return inputs;
     }
 
@@ -441,7 +441,14 @@ class NeuralNetwork {
         }
     }
 
-    // TODO: Implement predict function
+    // Predicts y for a given X
+    std::vector<std::vector<std::vector<double> > > predict(std::vector<std::vector<std::vector<double> > > X) {
+        std::vector<std::vector<std::vector<double> > > predictions;
+        for(auto input: X) {
+            predictions.push_back(forward_pass(input));
+        }
+        return predictions;
+    }
 
     // TODO: Move loss function outside
     // Use mse as a loss for now, add more losses later / if necessary
@@ -541,4 +548,9 @@ int main()
     nn.connect();
     std::cout << "training nn..." << std::endl;
     nn.train(X, y, 1000);
+
+    auto predictions = nn.predict({{{0,0}}, {{1,1}}, {{1,0}}, {{0,1}}});
+    for(auto prediction: predictions) {
+        print_matrix(prediction);
+    }
 }
