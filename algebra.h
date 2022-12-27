@@ -1,6 +1,7 @@
 #include <cmath>
 #include <functional>
 #include <vector>
+#include <stdexcept>
 
 // Linear algebra operations
 
@@ -54,13 +55,26 @@ static std::vector<double> add(std::vector<double> a, std::vector<double> b) {
     }
     return output;
 }
-// Adds matrix a to matrix b
-static std::vector<std::vector<double> > add(std::vector<std::vector<double> > a, std::vector<std::vector<double> > b) {
+// Adds a vector to a matrix
+static std::vector<std::vector<double> > add(std::vector<std::vector<double> > matrix, std::vector<double> vector) {
     std::vector<std::vector<double> > output;
-    for(int i=0; i<a.size(); i++) {
-        output.push_back(add(a[i], b[i]));
+    for(int i=0; i<matrix.size(); i++) {
+        output.push_back(add(matrix[i], vector));
     }
     return output;
+}
+// Adds matrix a to matrix b
+static std::vector<std::vector<double> > add(std::vector<std::vector<double> > a, std::vector<std::vector<double> > b) {
+    if (a.size() == b.size()) {
+        std::vector<std::vector<double> > output;
+        for(int i=0; i<a.size(); i++) {
+            output.push_back(add(a[i], b[i]));
+        }
+        return output;
+    } else if(b.size() == 1) {
+        return add(a, b[0]);
+    }
+    throw std::invalid_argument("Matrix sizes don't align");
 }
 // Subtracts vector b from vector a
 static std::vector<double> subtract(std::vector<double> a, std::vector<double> b) {
@@ -70,13 +84,26 @@ static std::vector<double> subtract(std::vector<double> a, std::vector<double> b
     }
     return output;
 }
-// Subtracts matrix a from matrix b
-static std::vector<std::vector<double> > subtract(std::vector<std::vector<double> > a, std::vector<std::vector<double> > b) {
+// Subtracts a vector from a matrix
+static std::vector<std::vector<double> > subtract(std::vector<std::vector<double> > matrix, std::vector<double> vector) {
     std::vector<std::vector<double> > output;
-    for(int i=0; i<a.size(); i++) {
-        output.push_back(subtract(a[i], b[i]));
+    for(int i=0; i<matrix.size(); i++) {
+        output.push_back(subtract(matrix[i], vector));
     }
     return output;
+}
+// Subtracts matrix a from matrix b
+static std::vector<std::vector<double> > subtract(std::vector<std::vector<double> > a, std::vector<std::vector<double> > b) {
+    if (a.size() == b.size()) {
+        std::vector<std::vector<double> > output;
+        for(int i=0; i<a.size(); i++) {
+            output.push_back(subtract(a[i], b[i]));
+        }
+        return output;
+    } else if(b.size() == 1) {
+        return subtract(a, b[0]);
+    }
+    throw std::invalid_argument("Matrix sizes don't align");
 }
 // Multiplies a vector by a scalar
 static std::vector<double> multiply(std::vector<double> vector, double scalar) {

@@ -84,6 +84,7 @@ void print_vector(std::vector<int> vector) {
 void print_matrix(std::vector<std::vector<double> > matrix) {
     for(int i = 0; i<matrix.size(); i++) {
         print_vector(matrix[i]);
+        std::cout << std::endl;
     }
 }
 void print_matrix(std::vector<std::vector<int> > matrix) {
@@ -144,7 +145,7 @@ static std::vector<std::vector<double> > apply(std::vector<std::vector<double> >
 // Activation functions
 // Rectified linear unit, max(x,0)
 static double relu(double value) {
-    return std::max(0.0, value);
+    return value > 0 ? value : 0;
 }
 static double relu_prime(double value) {
     return value > 0 ? 1 : 0;
@@ -155,6 +156,14 @@ static double tanh_prime(double value) {
     return 1 - pow(tanh(value), 2);
 }
 
+// Sigmoid
+static double sigmoid(double value) {
+    return 1 / (1 + exp(-value));
+}
+static double sigmoid_prime(double value) {
+    double sigm = sigmoid(value);
+    return sigm * (1 - sigm);
+}
 
 // Loss functions
 // Mean squared error
@@ -195,6 +204,7 @@ class Layer {
 
     virtual std::vector<std::vector<double> > forward_pass(std::vector<std::vector<double> > inputs) = 0;
     virtual std::vector<std::vector<double> > backward_pass(std::vector<std::vector<double> > error) = 0;
+    virtual void print() = 0;
 };
 
 // Fully connected layer
@@ -208,12 +218,16 @@ class DenseLayer: public Layer {
         id = p_id;
         activation_function = p_activation_function;
         activation_function_prime = p_activation_function_prime;
-        std::vector<double> bias_vector;
+        
         // Initialize weights and bias randomly
+        std::vector<double> bias_vector;
         for(int i=0; i<number_of_nodes; i++) {
             double bias = ((double) rand() / (RAND_MAX)) - 0.5;
             bias_vector.push_back(bias);
         }
+        // Biases are a 1xnumber_of_nodes matrix
+        biases.push_back(bias_vector);
+
         for(int i=0; i<number_of_inputs; i++) {
             std::vector<double> weight_vector;
             for(int j=0; j<number_of_nodes; j++) {
@@ -222,10 +236,8 @@ class DenseLayer: public Layer {
             }
             weights.push_back(weight_vector);
         }
-        // Biases are a 1xnumber_of_nodes matrix
-        biases.push_back(bias_vector);
     }
-
+    
     // Forward pass, dot product of inputs and weights, with bias added and activation function applied, returns outputs
     std::vector<std::vector<double> > forward_pass(std::vector<std::vector<double> > inputs) {
         this->inputs = inputs;
@@ -239,8 +251,8 @@ class DenseLayer: public Layer {
         return outputs;
     }
 
-    // Backward pass, reverse activation function (with its prime), update biases and weights and return the updated error
-    std::vector<std::vector<double> > backward_pass(std::vector<std::vector<double> > error) {
+    // Backward pass, reverse the activation function (with its prime), update biases and weights and return the updated error
+    std::vector<std::vector<double> > backward_pass(std::vector<std::vector<double> > error) {       
         // Reverse the activation function with its prime
         auto reverse_activation = apply(intermediates, activation_function_prime);
         auto reverse_activation_errors = multiply(reverse_activation, error);
@@ -248,13 +260,14 @@ class DenseLayer: public Layer {
         // Update biases
         biases = subtract(biases, multiply(reverse_activation_errors, learning_rate));
 
+        // Calculate input error (error which is passed to the previous layer), do this before updating weights!
+        auto input_error = dot(reverse_activation_errors, transpose(weights));
+
         // Calculate weight updates
         // Order of dot product matters since the matrices do not have the same shape
         auto weight_error = dot(transpose(inputs), reverse_activation_errors);
         weights = subtract(weights, multiply(weight_error, learning_rate));
 
-        // Calculate input error (error which is passed to the previous layer)
-        auto input_error = dot(reverse_activation_errors, transpose(weights));
         return input_error;
     }
 
@@ -354,60 +367,73 @@ class NeuralNetwork {
 int main()
 {
     // MNIST training case
-    // auto dataset = read_csv("../data/mnist_train.csv");
+    auto dataset = read_csv("../data/mnist_train.csv");
 
-    // std::vector<int> y_input;
-    // std::vector<std::vector<std::vector<double> > > X;
+    std::vector<int> y_input;
+    std::vector<std::vector<std::vector<double> > > X;
+    for(int index=0; index<dataset[0].second.size(); index++) { 
+        y_input.push_back(dataset[0].second[index]);
+        std::vector<double> X_values;
+        for(int column=1; column<dataset.size(); column++) {
+            // Rescale the data to values between 0 and 1 by dividing by 255 
+            X_values.push_back(dataset[column].second[index] / 255.0);
+        }
+        std::vector<std::vector<double> > X_matrix;
+        X_matrix.push_back(X_values);
+        X.push_back(X_matrix);
+    }
 
-    // for(int index=0; index<dataset.size(); index++) { 
-    //     y_input.push_back(dataset[0].second[index]);
-    //     std::vector<double> X_values;
-    //     for(int column=1; column<dataset.size(); column++) {
-    //         X_values.push_back(dataset[column].second[index]);
-    //     }
-    //     std::vector<std::vector<double> > X_matrix;
-    //     X_matrix.push_back(X_values);
-    //     X.push_back(X_matrix);
-    // }
+    // Turn y into categoricals (sparse)
+    std::vector<std::vector<std::vector<double> > > y;
+    for(int y_value: y_input) {
+        // i from 0 to 9 to include all digits
+        std::vector<double> y_value_sparse;
+        for(int i=0; i<10; i++) {
+            y_value_sparse.push_back(i==y_value ? 1 : 0);
+        }
+        std::vector<std::vector<double> > y_matrix;
+        y_matrix.push_back(y_value_sparse);
+        y.push_back(y_matrix);
+    }
 
-    // // Turn y into categoricals (sparse)
-    // std::vector<std::vector<std::vector<double> > > y;
-    // for(int y_value: y_input) {
-    //     // i from 0 to 9 to include all digits
-    //     std::vector<double> y_value_sparse;
-    //     for(int i=0; i<10; i++) {
-    //         y_value_sparse.push_back(i==y_value ? 1 : 0);
-    //     }
-    //     std::vector<std::vector<double> > y_matrix;
-    //     y_matrix.push_back(y_value_sparse);
-    //     y.push_back(y_matrix);
-    // }
+    std::vector<std::vector<std::vector<double> > > X_train;
+    std::vector<std::vector<std::vector<double> > > X_test;
+    std::vector<std::vector<std::vector<double> > > y_train;
+    std::vector<std::vector<std::vector<double> > > y_test;
+    for(int i=0; i<1000; i++) {
+        X_train.push_back(X[i]);
+        y_train.push_back(y[i]);
+    }
+    for(int i=1000; i<1005; i++) {
+        X_test.push_back(X[i]);
+        y_test.push_back(y[i]);
+    }
 
-    // std::vector<std::vector<std::vector<double> > > X_train;
-    // std::vector<std::vector<std::vector<double> > > y_train;
-    // for(int i=0; i<500; i++) {
-    //     X_train.push_back(X[i]);
-    //     y_train.push_back(y[i]);
-    // }
 
     // Simple XOR training case
-    std::vector<std::vector<std::vector<double> > > X = {{{0,0}}, {{0,1}}, {{1,1}}, {{1,0}}};
-    std::vector<std::vector<std::vector<double> > > y = {{{0}}, {{1}}, {{0}}, {{1}}};
+    // std::vector<std::vector<std::vector<double> > > X = {{{0,0}}, {{0,1}}, {{1,1}}, {{1,0}}};
+    // std::vector<std::vector<std::vector<double> > > y = {{{0}}, {{1}}, {{0}}, {{1}}};
+    // std::vector<std::vector<std::vector<double> > > X_test = {{{0,0}}, {{1,1}}, {{1,0}}, {{0,1}}};
 
+    // Use a pretty high learning rate for now to compensate for smaller training set size
     NeuralNetwork nn = NeuralNetwork(0.1, mse, mse_prime);
 
-    DenseLayer l1 = DenseLayer("1", 2, 5, tanh, tanh_prime);
-    DenseLayer l2 = DenseLayer("2", 5, 1, tanh, tanh_prime);
+    // TODO: Sigmoid and tanh work, relu doesn't, investigate this
+    DenseLayer l1 = DenseLayer("1", 28*28, 100, sigmoid, sigmoid_prime);
+    DenseLayer l2 = DenseLayer("2", 100, 50, sigmoid, sigmoid_prime);
+    DenseLayer l3 = DenseLayer("3", 50, 10, sigmoid, sigmoid_prime);
     nn.layers.push_back(&l1);
     nn.layers.push_back(&l2);
+    nn.layers.push_back(&l3);
 
 
     nn.connect();
     std::cout << "training nn..." << std::endl;
-    nn.train(X, y, 1000);
+    nn.train(X_train, y_train, 30);
 
-    auto predictions = nn.predict({{{0,0}}, {{1,1}}, {{1,0}}, {{0,1}}});
-    for(auto prediction: predictions) {
-        print_matrix(prediction);
+    auto predictions = nn.predict(X_test);
+    for(int i=0; i<predictions.size(); i++) {
+        print_matrix(y_test[i]);
+        print_matrix(predictions[i]);
     }
 }
